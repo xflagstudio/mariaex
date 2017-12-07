@@ -78,9 +78,9 @@ defmodule Mariaex.Protocol do
 
         case get_master_for_aurora(sock) do
 
-          {:ok, master_dsn} ->
+          {:ok, master_name} ->
             cleanup_connection(sock)
-            do_connect(Keyword.put(opts, :hostname, master_dsn))
+            do_connect(Keyword.put(opts, :hostname, master_name))
 
           {:error, error} = error ->
             cleanup_connection(sock)
@@ -140,17 +140,17 @@ defmodule Mariaex.Protocol do
         if length(rows) < 1 do
           {:error, %Mariaex.Error{message: "aurora master information not found"}}
         else
-          find_aurora_master_dsn(sock.opts[:hostname], rows)
+          find_aurora_master_name(sock.opts[:hostname], rows)
         end
     end
   end
 
-  defp find_aurora_master_dsn(hostname, [[master_host]]) do
+  defp find_aurora_master_name(hostname, [[master_host]]) do
     [_host, domain] = String.split(hostname, ".", parts: 2)
-    master_dns = master_host <> "." <> String.replace_prefix(domain, "cluster-", "")
-    {:ok, master_dns}
+    master_name = master_host <> "." <> String.replace_prefix(domain, "cluster-", "")
+    {:ok, master_name}
   end
-  defp find_aurora_master_dsn(_hostname, _rows) do
+  defp find_aurora_master_name(_hostname, _rows) do
     {:error, %Mariaex.Error{message: "aurora master information not found"}}
   end
 
@@ -213,7 +213,7 @@ defmodule Mariaex.Protocol do
   end
 
   defp parse_host(host) do
-    host = if is_binary(host), do: String.to_char_list(host), else: host
+    host = if is_binary(host), do: String.to_charlist(host), else: host
 
     case :inet.parse_strict_address(host) do
       {:ok, address} ->
@@ -1104,7 +1104,7 @@ defmodule Mariaex.Protocol do
     l |> Enum.map(&bxor(&1, extra - 64)) |> to_string
   end
 
-  defp hash(bin) when is_binary(bin), do: bin |> to_char_list |> hash
+  defp hash(bin) when is_binary(bin), do: bin |> to_charlist |> hash
   defp hash(s), do: hash(s, 1345345333, 305419889, 7)
   defp hash([c | s], n1, n2, add) do
     n1 = bxor(n1, (((band(n1, 63) + add) * c + n1 * 256)))
