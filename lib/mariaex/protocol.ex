@@ -68,7 +68,94 @@ defmodule Mariaex.Protocol do
   """
 
   def connect(opts) do
-    opts         = default_opts(opts)
+
+    opts = default_opts(opts)
+
+    if opts[:aurora_master] do
+
+      with {:ok, sock} <- do_connect(opts),
+           {:ok, sock} <- checkout(sock) do
+
+        case get_master_for_aurora(sock) do
+
+          {:ok, master_dsn} ->
+            cleanup_connection(sock)
+            do_connect(Keyword.put(opts, :hostname, master_dsn))
+
+          {:error, error} = error ->
+            cleanup_connection(sock)
+            error
+
+        end
+
+      else
+
+        {:disconnect, _, _} = dis ->
+          {:error, %Mariaex.Error{message: "disconnected: #{dis}"}}
+
+        {:error, reason} = error -> error
+
+      end
+
+    else
+      do_connect(opts)
+    end
+
+  end
+
+  defp cleanup_connection(sock) do
+    case checkin(sock) do
+
+      {:ok, sock} ->
+        disconnect(nil, sock)
+        :ok
+
+      _other -> :ok
+
+    end
+  end
+
+  defp get_master_for_aurora(sock) do
+    statement = """
+    SELECT
+      server_id
+    FROM
+      information_schema.replica_host_status
+    WHERE
+      session_id = 'MASTER_SESSION_ID'
+      and
+      last_update_timestamp > NOW() - INTERVAL 3 MINUTE
+    ORDER BY
+      last_update_timestamp DESC
+    LIMIT 1
+    """
+
+    query = %Query{type: :text, statement: statement}
+
+    case send_text_query(sock, statement) |> text_query_recv(query) do
+
+      {:error, error, _} -> {:error, error}
+
+      {:ok, {%Mariaex.Result{rows: rows}, _}, sock} ->
+        if length(rows) < 1 do
+          {:error, %Mariaex.Error{message: "aurora master information not found"}}
+        else
+          find_aurora_master_dsn(sock.opts[:hostname], rows)
+        end
+    end
+  end
+
+  defp find_aurora_master_dsn(hostname, [[master_host]]) do
+    [_host, domain] = String.split(hostname, ".", parts: 2)
+    master_dns = master_host <> "." <> String.replace_prefix(domain, "cluster-", "")
+    {:ok, master_dns}
+  end
+  defp find_aurora_master_dsn(_hostname, _rows) do
+    {:error, %Mariaex.Error{message: "aurora master information not found"}}
+  end
+
+  def do_connect(opts) do
+
     sock_type    = opts[:sock_type] |> Atom.to_string |> String.capitalize()
     sock_mod     = Module.concat(Mariaex.Connection, sock_type)
     host         = opts[:hostname] |> parse_host
@@ -185,7 +272,7 @@ defmodule Mariaex.Protocol do
         {:error, error}
     end
   end
-  defp handle_handshake(packet(seqnum: seqnum, 
+  defp handle_handshake(packet(seqnum: seqnum,
                                msg: handshake(capability_flags_1: flag1,
                                               capability_flags_2: flag2,
                                               plugin: plugin) = handshake) = _packet,  %{opts: opts}, s) do
