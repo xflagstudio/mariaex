@@ -93,7 +93,7 @@ defmodule Mariaex.Protocol do
         {:disconnect, _, _} = dis ->
           {:error, %Mariaex.Error{message: "disconnected: #{dis}"}}
 
-        {:error, reason} = error -> error
+        {:error, _reason} = error -> error
 
       end
 
