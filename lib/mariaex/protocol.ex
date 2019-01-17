@@ -80,7 +80,7 @@ defmodule Mariaex.Protocol do
       with {:ok, sock} <- do_connect(opts),
            {:ok, sock} <- checkout(sock) do
 
-        case get_master_for_aurora(sock) do
+        case get_master_for_aurora(sock, opts) do
 
           {:ok, master_name} ->
             cleanup_connection(sock)
@@ -119,7 +119,7 @@ defmodule Mariaex.Protocol do
     end
   end
 
-  defp get_master_for_aurora(sock) do
+  defp get_master_for_aurora(sock, opts) do
     statement = """
     SELECT
       server_id
@@ -135,12 +135,11 @@ defmodule Mariaex.Protocol do
     """
 
     query = %Query{type: :text, statement: statement}
-
-    case send_text_query(sock, statement) |> text_query_recv(query) do
+    case send_text_query(sock, statement) |> text_query_recv(opts, query) do
 
       {:error, error, _} -> {:error, error}
 
-      {:ok, {%Mariaex.Result{rows: rows}, _}, sock} ->
+      {:ok, _, {%Mariaex.Result{rows: rows}, _}, sock} ->
         if length(rows) < 1 do
           {:error, %Mariaex.Error{message: "aurora master information not found"}}
         else
